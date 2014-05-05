@@ -1,6 +1,9 @@
 def kcquote(s):
     return '"%s"' % s
 
+def mil2mm(mil):
+    return 0.0254 * mil
+
 class Rect:
     def __init__(self, sx, sy, ex, ey):
         self.sx = sx
@@ -92,9 +95,14 @@ class PCBModule:
         self.y = y
         self.pads = []
 
-    def create_pads(self, pad_grid, netfunc = None):
+    def create_pads(self, pad_grid, netfunc = None, tracks_layer = None, widthfunc = None):
         padid = 1
-        for g in xrange(pad_grid.get_num_groups()):
+        ngroups = pad_grid.get_num_groups()
+        maxitems = max([pad_grid.get_num_items(g) for g in xrange(ngroups)])
+        last_in_row = [None] * maxitems
+        tracks = []
+        for g in xrange(ngroups):
+            last_in_col = None
             for i in xrange(pad_grid.get_num_items(g)):
                 res = pad_grid.get_pad_location_and_type(g, i)
                 if res is not None:
@@ -105,6 +113,14 @@ class PCBModule:
                     if net is not None:
                         self.pads.append(PCBPad(padid, padclass, x, y, net, self.layer))
                         padid += 1
+                        if tracks_layer is not None and last_in_col is not None and last_in_col[0] == net:
+                            tracks.append(TraceSegment(x + self.x, last_in_col[1] + self.y, x + self.x, y + self.y, net, widthfunc(net), tracks_layer))
+                        last_in_col = (net, y)
+                        
+                        if tracks_layer is not None and last_in_row[i] is not None and last_in_row[i][0] == net:
+                            tracks.append(TraceSegment(last_in_row[i][1] + self.x, y + self.y, x + self.x, y + self.y, net, widthfunc(net), tracks_layer))
+                        last_in_row[i] = (net, x)
+        return tracks
 
     def get_exclusions(self):
         return [p.get_bounding_rect().offset(self.x, self.y) for p in self.pads]
@@ -259,6 +275,8 @@ class PCBFile:
         self.items = []
     def append(self, item):
         self.items.append(item)
+    def append_all(self, items):
+        self.items += items
     def get_layerstr(self):
         return "".join(["    (%s %s %s)\n" % (l[0], l[1], l[2]) for l in self.layers])
     def generate(self):

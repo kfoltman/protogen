@@ -79,8 +79,10 @@ def getnet_stm32(group, index):
     return None
 exmatrix = GridWithExclusions(matrix, excl, (xmid, ymid))
 mod = PCBModule('grid', 'F.Cu', xmid, ymid)
-mod.create_pads(exmatrix, getnet_stm32)
+tracks = mod.create_pads(exmatrix, getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)
 pcbf.append(mod)
+for t in tracks:
+    pcbf.append(t)
 
 for i in xrange(cols):
     xyt = matrix.get_pad_location_and_type(i, 0)
