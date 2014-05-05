@@ -110,15 +110,16 @@ for bo in range(3):
         # Vertical line from the pad
         if ixsym > 0:
             ys += tdir * mod2.pads[i].padclass.sizey / 2
-            straightv = width * (2 * ixsym + 0.5)
+            space_per_trace = (abs(ye - ys) - dilmod.pads[i].padclass.sizey - width) / mid_pin
+            straightv = max(space_per_trace, 2 * width) * ixsym + 0.5 * width
             corner = ixsym * pitch / 2 + width
             if ixsym == mid_pin:
                 corner = 0
             if corner > straightv:
                 corner = straightv
             mind = min(abs(xe - xs), abs(ye - ys))
-            if corner > mind / 3:
-                corner = mind / 3
+            if corner > mind / 2:
+                corner = mind / 2
             
             ys2 = ys + tdir * (straightv - corner)
             xs3 = xs + corner * sgn(xe - xs)
