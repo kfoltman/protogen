@@ -78,32 +78,71 @@ for bo in range(3):
     pcbf.append(mod2)
     excl.append(mod2.get_bounding_rect())
 
-    mod3 = PCBModule('dil%d' % pins, 'F.Cu', xfp, yfp)
-    mod3.create_pads(DILGrid(pins, vspacing), pinnum)
-    pcbf.append(mod3)
-    excl.append(mod3.get_bounding_rect())
+    dilmod = PCBModule('dil%d' % pins, 'F.Cu', xfp, yfp)
+    dilmod.create_pads(DILGrid(pins, vspacing), pinnum)
+    pcbf.append(dilmod)
+    excl.append(dilmod.get_bounding_rect())
+
+    def sgn(val):
+        if val > 0:
+            return 1
+        if val < 0:
+            return -1
+        return 0
+    def smart_connect(dilmod, smallmod, i, pins, pitch, width = 0.254):
+        # pins per side
+        pins_side = pins // 2
+        mid_pin = (pins_side - 1) / 2
+        traces = []
+        if i < pins_side:
+            ix = i
+            tdir = 1
+        else:
+            ix = pins - 1 - i
+            tdir = -1
+        if ix <= mid_pin:
+            ixsym = ix
+        else:
+            ixsym = pins_side - 1 - ix
+        
+        xs, ys = smallmod.pads[i].x, smallmod.pads[i].y
+        xe, ye = dilmod.pads[i].x, dilmod.pads[i].y
+        # Vertical line from the pad
+        if ixsym > 0:
+            ys += tdir * mod2.pads[i].padclass.sizey / 2
+            straightv = width * (2 * ixsym + 0.5)
+            corner = ixsym * pitch / 2 + width
+            if ixsym == mid_pin:
+                corner = 0
+            if corner > straightv:
+                corner = straightv
+            mind = min(abs(xe - xs), abs(ye - ys))
+            if corner > mind / 3:
+                corner = mind / 3
+            
+            ys2 = ys + tdir * (straightv - corner)
+            xs3 = xs + corner * sgn(xe - xs)
+            ys3 = ys + tdir * straightv
+            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
+            if corner > 0:
+                traces.append(TraceSegment(xfp + xs, yfp + ys2, xfp + xs3, yfp + ys3, smallmod.pads[i].netname, width, smallmod.layer))
+            xs, ys = xs3, ys3
+        
+        if abs(xe - xs) > abs(ye - ys):
+            xs2 = xs + sgn(xe - xs) * (abs(xe - xs) - abs(ye - ys))
+            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs2, yfp + ys, smallmod.pads[i].netname, width, smallmod.layer))
+            xs = xs2
+        elif abs(xe - xs) < abs(ye - ys):
+            ys2 = ys + sgn(ye - ys) * (abs(ye - ys) - abs(xe - xs))
+            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
+            ys = ys2
+        traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xe, yfp + ye, smallmod.pads[i].netname, width, smallmod.layer))
+        return traces
     
     mid = (pins // 2 - 1) / 2.0
     for i in xrange(pins):
-        if i == 0 or i == pins-1 or i == pins // 2 or i == pins // 2 - 1:
-            yshift = 0
-        elif i < pins // 2:
-            yshift = mod1.pads[i].padclass.sizey / 2
-        else:
-            yshift = -mod1.pads[i].padclass.sizey / 2
-        pcbf.append(TraceSegment(xfp + mod1.pads[i].x, yfp + mod1.pads[i].y + yshift, xfp + mod3.pads[i].x, yfp + mod3.pads[i].y, mod1.pads[i].netname, 0.254, "F.Cu"))
-        if i == 0 or i == pins-1 or i == pins // 2 or i == pins // 2 - 1:
-            yshift = 0
-        elif i < pins // 2:
-            yshift = mod2.pads[i].padclass.sizey / 2
-        else:
-            yshift = -mod2.pads[i].padclass.sizey / 2
-        ix = i % (pins // 2) - mid
-        ix = ix * 1.0 / (mid - 1)
-        yshift *= (1 + 1.5 * math.cos(ix * 3.14 / 2));
-        if yshift != 0:
-            pcbf.append(TraceSegment(xfp + mod2.pads[i].x, yfp + mod2.pads[i].y + yshift, xfp + mod2.pads[i].x, yfp + mod2.pads[i].y, mod2.pads[i].netname, 0.254, "B.Cu"))
-        pcbf.append(TraceSegment(xfp + mod2.pads[i].x, yfp + mod2.pads[i].y + yshift, xfp + mod3.pads[i].x, yfp + mod3.pads[i].y, mod2.pads[i].netname, 0.254, "B.Cu"))
+        pcbf.append_all(smart_connect(dilmod, mod1, i, pins, gen.grid.pitch))
+        pcbf.append_all(smart_connect(dilmod, mod2, i, pins, gen2.grid.pitch))
 
 holes = [
     MountingHoleModule(xo + 5, yo + 5, 4),
@@ -118,6 +157,10 @@ for h in holes:
 def getnet_stm32(group, index):
     if group == 0:
         return "GND"
+    if group >= cols - 3:
+        return None
+    if group == cols - 4:
+        return "VCC1"
     if index < 3:
         return "HDR1_%d" % (group)
     if index < 6:
@@ -142,7 +185,8 @@ def getnet_stm32(group, index):
         return "VCC2"
     return None
 mod = PCBModule('grid', 'F.Cu', xmid, ymid)
-mod.create_pads(GridWithExclusions(matrix, excl, (xmid, ymid)), getnet_stm32)
+tracks = mod.create_pads(GridWithExclusions(matrix, excl, (xmid, ymid)), getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)
 pcbf.append(mod)
+pcbf.append_all(tracks)
 
 file("output.kicad_pcb", "w").write(pcbf.generate())
