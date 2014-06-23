@@ -1,4 +1,5 @@
 from pcbfile import *
+import re
 
 class PadGrid:
     def get_pad_location_and_type(self, group, index):
@@ -167,3 +168,142 @@ class SMDFootprintGenerators:
     Reflow0603 = VishaySMD("reflow0603", G = 0.5, Y = 0.95, X = 0.95, Z = 2.4)
     Reflow0402 = VishaySMD("reflow0402", G = 0.25, Y = 0.6, X = 0.55, Z = 1.45)
 
+def sgn(val):
+    if val > 0:
+        return 1
+    if val < 0:
+        return -1
+    return 0
+
+# Note: this is very limited
+def smart_connect(dilmod, smallmod, i, pins, pitch, width = 0.254, smd = True):
+    # pins per side
+    pins_side = pins // 2
+    mid_pin = (pins_side - 1) / 2
+    traces = []
+    if i < pins_side:
+        ix = i
+        tdir = 1
+    else:
+        ix = pins - 1 - i
+        tdir = -1
+    if ix <= mid_pin:
+        ixsym = ix
+    else:
+        ixsym = pins_side - 1 - ix
+    
+    xfp, yfp = smallmod.x, smallmod.y
+    xs, ys = smallmod.pads[i].x, smallmod.pads[i].y
+    xe, ye = dilmod.pads[i].x, dilmod.pads[i].y
+    # Vertical line from the pad
+    if ixsym > 0:
+        if smd:
+            ys += tdir * smallmod.pads[i].padclass.sizey / 2
+        space_per_trace = (abs(ye - ys) - dilmod.pads[i].padclass.sizey - width) / (mid_pin - 1)
+        straightv = max(space_per_trace, 2 * width) * ixsym + 0.5 * width
+        corner = ixsym * pitch / 2 + width
+        if ixsym == mid_pin:
+            corner = 0
+        if corner > straightv:
+            corner = straightv
+        mind = min(abs(xe - xs), abs(ye - ys))
+        if corner > mind / 2:
+            corner = mind / 2
+        
+        ys2 = ys + tdir * (straightv - corner)
+        xs3 = xs + corner * sgn(xe - xs)
+        ys3 = ys + tdir * straightv
+        traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
+        if corner > 0:
+            traces.append(TraceSegment(xfp + xs, yfp + ys2, xfp + xs3, yfp + ys3, smallmod.pads[i].netname, width, smallmod.layer))
+        xs, ys = xs3, ys3
+    
+    if abs(xe - xs) > abs(ye - ys):
+        xs2 = xs + sgn(xe - xs) * (abs(xe - xs) - abs(ye - ys))
+        traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs2, yfp + ys, smallmod.pads[i].netname, width, smallmod.layer))
+        xs = xs2
+    elif abs(xe - xs) < abs(ye - ys):
+        ys2 = ys + sgn(ye - ys) * (abs(ye - ys) - abs(xe - xs))
+        traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
+        ys = ys2
+    traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xe, yfp + ye, smallmod.pads[i].netname, width, smallmod.layer))
+    return traces
+
+def widthmetric(net1, net2):
+    if re.sub("_.*", "", net1) == re.sub("_.*", "", net2):
+        return 0.2
+    return 0.3
+        
+def widthmetric2(net1, net2):
+    if re.sub("_.*", "", net1) == re.sub("_.*", "", net2):
+        return 0
+    return 0.2
+        
+def make_silkscreen(cols, rows, exmatrix, pcbf, getnet, pitch, xmid, ymid):
+    for x in xrange(0, cols):
+        for y in xrange(0, rows):
+            xyt = exmatrix.get_pad_location_and_type(x, y)
+            if xyt is not None:
+                net = getnet(x, y)
+                if net is None:
+                    continue
+                leftbound = x == 0
+                rightbound = x == cols - 1
+                if x > 0:
+                    netl = getnet(x - 1, y)
+                    if netl is None:
+                        leftbound = True
+                    if net != netl and netl is not None:
+                        left_xyt = exmatrix.get_pad_location_and_type(x - 1, y)
+                        if left_xyt is not None:
+                            xline = (xyt[0] + left_xyt[0]) / 2 + xmid
+                            pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "F.SilkS", width = widthmetric(net, netl)))
+                            if widthmetric2(net, netl) > 0:
+                                pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "B.SilkS", width = widthmetric2(net, netl)))
+                        else:
+                            leftbound = True
+                if x < cols - 1:
+                    netr = getnet(x + 1, y)
+                    if netr is None:
+                        rightbound = True
+                    right_xyt = exmatrix.get_pad_location_and_type(x + 1, y)
+                    if right_xyt is None:
+                        rightbound = True
+                if leftbound:
+                    xline = xyt[0] - pitch / 2 + xmid
+                    pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "F.SilkS", width = 0.3))
+                    pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "B.SilkS", width = 0.3))
+                if rightbound:
+                    xline = xyt[0] + pitch / 2 + xmid
+                    pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "F.SilkS", width = 0.3))
+                    pcbf.append(GraphicLine(xline, xyt[1] - pitch / 2 + ymid, xline , xyt[1] + pitch / 2 + ymid, layer = "B.SilkS", width = 0.3))
+                topbound = y == 0
+                bottombound = y == rows - 1
+                if y > 0:
+                    netu = getnet(x, y - 1)
+                    if netu is None:
+                        topbound = True
+                    else:
+                        up_xyt = exmatrix.get_pad_location_and_type(x, y - 1)
+                        if up_xyt is None:
+                            topbound = True
+                        elif net != netu:
+                            yline = (xyt[1] + up_xyt[1]) / 2 + ymid
+                            pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "F.SilkS", width = widthmetric(net, netu)))
+                            if widthmetric2(net, netu) > 0:
+                                pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "B.SilkS", width = widthmetric2(net, netu)))
+                if y < rows - 1:
+                    netr = getnet(x, y + 1)
+                    if netr is None:
+                        bottombound = True
+                    bottom_xyt = exmatrix.get_pad_location_and_type(x, y + 1)
+                    if bottom_xyt is None:
+                        bottombound = True
+                if topbound:
+                    yline = xyt[1] - pitch / 2 + ymid
+                    pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "F.SilkS", width = 0.3))
+                    pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "B.SilkS", width = 0.3))
+                if bottombound:
+                    yline = xyt[1] + pitch / 2 + ymid
+                    pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "F.SilkS", width = 0.3))
+                    pcbf.append(GraphicLine(xyt[0] - pitch / 2 + xmid, yline, xyt[0] + pitch / 2 + xmid, yline, layer = "B.SilkS", width = 0.3))
