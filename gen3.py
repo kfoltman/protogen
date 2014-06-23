@@ -14,6 +14,8 @@ for i in range(39):
     pcbf.netlist.nets.append('GRP1_%d' % (i + 1))
     pcbf.netlist.nets.append('GRP2_%d' % (i + 1))
     pcbf.netlist.nets.append('GRP3_%d' % (i + 1))
+    pcbf.netlist.nets.append('HDR5_%d' % (i + 1))
+    pcbf.netlist.nets.append('HDR6_%d' % (i + 1))
     
 xo = 50
 yo = 50
@@ -25,7 +27,7 @@ ymid = yo + ysize / 2
 xe = xo + xsize
 ye = yo + ysize
 
-pcbf.append(GraphicRect(xo, yo, xo + xsize, yo + ysize))
+pcbf.append(GraphicRect(xo, yo, xo + xsize, yo + ysize, roundness = 4))
 pitch = 2.54
 rows = int(xsize / pitch) - 1
 cols = int(ysize / pitch) - 1
@@ -56,6 +58,7 @@ for bo in range(3):
 
     xfp = matrix_extremes.sx + xofs * pitch
     pinnum = lambda group, index: 'BRK%d_%d' % (bo, group * pins // 2 + index + 1)
+    vspacing2 = 9
     if bo == 2:
         vspacing = 7
         gen = SMDFootprintGenerators.SOIC_W[pins]
@@ -65,10 +68,10 @@ for bo in range(3):
         gen = SMDFootprintGenerators.SOIC_W[pins]
         gen2 = SMDFootprintGenerators.SSOP_530[pins]
     else:
-        vspacing = 5
+        vspacing = 7
         gen = SMDFootprintGenerators.SOIC_N[pins]
         gen2 = SMDFootprintGenerators.SSOP_440[pins]
-    yfp = matrix_extremes.ey - vspacing / 2.0 * pitch
+    yfp = matrix_extremes.ey - vspacing2 / 2.0 * pitch
 
     mod1 = gen.create("F.Cu", xfp, yfp, pinnum)
     pcbf.append(mod1)
@@ -81,75 +84,44 @@ for bo in range(3):
     dilmod = PCBModule('dil%d' % pins, 'F.Cu', xfp, yfp)
     dilmod.create_pads(DILGrid(pins, vspacing), pinnum)
     pcbf.append(dilmod)
-    excl.append(dilmod.get_bounding_rect())
-
-    def sgn(val):
-        if val > 0:
-            return 1
-        if val < 0:
-            return -1
-        return 0
-    def smart_connect(dilmod, smallmod, i, pins, pitch, width = 0.254):
-        # pins per side
-        pins_side = pins // 2
-        mid_pin = (pins_side - 1) / 2
-        traces = []
-        if i < pins_side:
-            ix = i
-            tdir = 1
-        else:
-            ix = pins - 1 - i
-            tdir = -1
-        if ix <= mid_pin:
-            ixsym = ix
-        else:
-            ixsym = pins_side - 1 - ix
-        
-        xs, ys = smallmod.pads[i].x, smallmod.pads[i].y
-        xe, ye = dilmod.pads[i].x, dilmod.pads[i].y
-        # Vertical line from the pad
-        if ixsym > 0:
-            ys += tdir * mod2.pads[i].padclass.sizey / 2
-            space_per_trace = (abs(ye - ys) - dilmod.pads[i].padclass.sizey - width) / mid_pin
-            straightv = max(space_per_trace, 2 * width) * ixsym + 0.5 * width
-            corner = ixsym * pitch / 2 + width
-            if ixsym == mid_pin:
-                corner = 0
-            if corner > straightv:
-                corner = straightv
-            mind = min(abs(xe - xs), abs(ye - ys))
-            if corner > mind / 2:
-                corner = mind / 2
+    
+    has_discretes = bo == 0
+    
+    if vspacing < vspacing2:
+        dilmod2 = PCBModule('dil%d' % pins, 'F.Cu', xfp, yfp)
+        dilmod2.create_pads(DILGrid(pins, vspacing2), pinnum)
+        pcbf.append(dilmod2)
+        excl.append(dilmod2.get_bounding_rect())
+        if has_discretes:
+            mod3 = DILSMD("discretes", padwidth = 1.6, padheight = 1.9, pitch = 2.54, midline = pitch * (vspacing - 2), pins = pins).create("F.Cu", xfp, yfp, pinnum)
+            pcbf.append(mod3)
             
-            ys2 = ys + tdir * (straightv - corner)
-            xs3 = xs + corner * sgn(xe - xs)
-            ys3 = ys + tdir * straightv
-            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
-            if corner > 0:
-                traces.append(TraceSegment(xfp + xs, yfp + ys2, xfp + xs3, yfp + ys3, smallmod.pads[i].netname, width, smallmod.layer))
-            xs, ys = xs3, ys3
-        
-        if abs(xe - xs) > abs(ye - ys):
-            xs2 = xs + sgn(xe - xs) * (abs(xe - xs) - abs(ye - ys))
-            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs2, yfp + ys, smallmod.pads[i].netname, width, smallmod.layer))
-            xs = xs2
-        elif abs(xe - xs) < abs(ye - ys):
-            ys2 = ys + sgn(ye - ys) * (abs(ye - ys) - abs(xe - xs))
-            traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xs, yfp + ys2, smallmod.pads[i].netname, width, smallmod.layer))
-            ys = ys2
-        traces.append(TraceSegment(xfp + xs, yfp + ys, xfp + xe, yfp + ye, smallmod.pads[i].netname, width, smallmod.layer))
-        return traces
+    else:
+        excl.append(dilmod.get_bounding_rect())
     
     mid = (pins // 2 - 1) / 2.0
     for i in xrange(pins):
-        pcbf.append_all(smart_connect(dilmod, mod1, i, pins, gen.grid.pitch))
+        if has_discretes:
+            pcbf.append_all(smart_connect(mod3, mod1, i, pins, gen.grid.pitch))
+            pcbf.append_all(smart_connect(dilmod, mod3, i, pins, gen.grid.pitch, smd = False))
+        else:
+            pcbf.append_all(smart_connect(dilmod, mod1, i, pins, gen.grid.pitch))
         pcbf.append_all(smart_connect(dilmod, mod2, i, pins, gen2.grid.pitch))
+        if vspacing2 > vspacing:
+            pcbf.append_all(smart_connect(dilmod2, dilmod, i, pins, gen2.grid.pitch, smd = False))
+    if bo == 0:
+        xline = xfp - 1.27 * pins / 2
+        pcbf.append(GraphicLine(xline, yfp - (vspacing2 + 1) / 2 * pitch + 0.4, xline, yfp + (vspacing2 + 1) / 2 * pitch, layer = "F.SilkS", width = 0.4))
+        pcbf.append(GraphicLine(xline, yfp - (vspacing2 + 1) / 2 * pitch + 0.4, xline, yfp + (vspacing2 + 1) / 2 * pitch, layer = "B.SilkS", width = 0.4))
+    xline = xfp + 1.27 * pins / 2
+    pcbf.append(GraphicLine(xline, yfp - (vspacing2 + 1) / 2 * pitch + 0.4, xline, yfp + (vspacing2 + 1) / 2 * pitch, layer = "F.SilkS", width = 0.4))
+    pcbf.append(GraphicLine(xline, yfp - (vspacing2 + 1) / 2 * pitch + 0.4, xline, yfp + (vspacing2 + 1) / 2 * pitch, layer = "B.SilkS", width = 0.4))
 
 holes = [
-    MountingHoleModule(xo + 5, yo + 5, 4),
-    MountingHoleModule(xe - 5, yo + 5, 4),
-    MountingHoleModule(xo + 5, ye - 5, 4),
-    MountingHoleModule(xe - 5, ye - 5, 4),
+    MountingHoleModule(xo + 4.5, yo + 4.5, 3.2),
+    MountingHoleModule(xe - 4.5, yo + 4.5, 3.2),
+    MountingHoleModule(xo + 4.5, ye - 4.5, 3.2),
+    MountingHoleModule(xe - 4.5, ye - 4.5, 3.2),
 ]
 for h in holes:
     pcbf.append(h)
@@ -158,10 +130,12 @@ for h in holes:
 def getnet_stm32(group, index):
     if group == 0:
         return "GND"
-    if group >= cols - 3:
-        return None
-    if group == cols - 4:
+    if group == cols - 5:
         return "VCC1"
+    if (group == cols - 4 or group == cols - 3) and index > 3 and index < 28:
+        return "HDR5_%d" % (index + 1)
+    if (group == cols - 2 or group == cols - 1) and index > 3 and index < 28:
+        return "HDR6_%d" % (index + 1)
     if index < 3:
         return "HDR1_%d" % (group)
     if index < 6:
@@ -186,8 +160,10 @@ def getnet_stm32(group, index):
         return "VCC2"
     return None
 mod = PCBModule('grid', 'F.Cu', xmid, ymid)
-tracks = mod.create_pads(GridWithExclusions(matrix, excl, (xmid, ymid)), getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)
+exmatrix = GridWithExclusions(matrix, excl, (xmid, ymid))
+tracks = mod.create_pads(exmatrix, getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)
 pcbf.append(mod)
 pcbf.append_all(tracks)
+make_silkscreen(cols, rows, exmatrix, pcbf, getnet_stm32, 2.54, xmid, ymid)
 
 file("output.kicad_pcb", "w").write(pcbf.generate())
