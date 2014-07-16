@@ -38,21 +38,6 @@ print "%d rows, %d columns" % (rows, cols)
 #mod = PCBModule('dil28', 'F.Cu', 75, 75)
 #mod.create_pads(DILGrid.small(28), lambda group, index: 'PIN%d' % (group * 14 + index + 1))
 
-matrix = THTMatrixGrid(rows = rows, columns = cols, hpitch = pitch, vpitch = pitch)
-matrix_extremes = matrix.get_extremes().offset(xmid, ymid)
-
-excl = []
-
-holes = [
-    MountingHoleModule(xo + 4.5, yo + 4.5, 3.2),
-    MountingHoleModule(xe - 4.5, yo + 4.5, 3.2),
-    MountingHoleModule(xo + 4.5, ye - 4.5, 3.2),
-    MountingHoleModule(xe - 4.5, ye - 4.5, 3.2),
-]
-for h in holes:
-    pcbf.append(h)
-    excl += h.get_exclusions()
-    
 def getnet_stm32(group, index):
     if group == 0:
         return "GND"
@@ -77,6 +62,29 @@ def getnet_stm32(group, index):
     if index < 20:
         return "GRP3_%d" % (group)
     return None
+    
+def getpadclass(group, index):
+    net = getnet_stm32(group, index)
+    is_vertical = group == 0 or group == cols - 1 or net not in ['VCC1', 'GND']
+    if net == 'GND':
+        return StdTHTPad.rect90 if not is_vertical else StdTHTPad.rect
+    return StdTHTPad.oval90 if net in ['VCC1'] and not is_vertical else StdTHTPad.oval
+
+matrix = THTMatrixGrid(rows = rows, columns = cols, hpitch = pitch, vpitch = pitch, padfunc = getpadclass)
+matrix_extremes = matrix.get_extremes().offset(xmid, ymid)
+
+excl = []
+
+holes = [
+    MountingHoleModule(xo + 4.5, yo + 4.5, 3.2),
+    MountingHoleModule(xe - 4.5, yo + 4.5, 3.2),
+    MountingHoleModule(xo + 4.5, ye - 4.5, 3.2),
+    MountingHoleModule(xe - 4.5, ye - 4.5, 3.2),
+]
+for h in holes:
+    pcbf.append(h)
+    excl += h.get_exclusions()
+    
 exmatrix = GridWithExclusions(matrix, excl, (xmid, ymid))
 mod = PCBModule('grid', 'F.Cu', xmid, ymid)
 tracks = mod.create_pads(exmatrix, getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)

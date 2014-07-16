@@ -17,6 +17,46 @@ for i in range(39):
     pcbf.netlist.nets.append('HDR5_%d' % (i + 1))
     pcbf.netlist.nets.append('HDR6_%d' % (i + 1))
     
+def getnet_stm32(group, index):
+    if group == 0:
+        return "GND"
+    if group == cols - 5:
+        return "VCC1"
+    if (group == cols - 4 or group == cols - 3) and index > 3 and index < 28:
+        return "HDR5_%d" % (index + 1)
+    if (group == cols - 2 or group == cols - 1) and index > 3 and index < 28:
+        return "HDR6_%d" % (index + 1)
+    if index < 3:
+        return "HDR1_%d" % (group)
+    if index < 6:
+        return "HDR2_%d" % (group)
+    if index < 10:
+        return "GRP1_%d" % (group)
+    if index == 10:
+        return "GND"
+    if index == 11:
+        return "VCC1"
+    if index < 17:
+        return "GRP2_%d" % (group)
+    if index < 20:
+        return "GRP3_%d" % (group)
+    if index < 23:
+        return "HDR3_%d" % (group)
+    if index < 26:
+        return "HDR4_%d" % (group)
+    if index == 26:
+        return "GND"
+    if index == 27:
+        return "VCC2"
+    return None
+    
+def getpadclass(group, index):
+    net = getnet_stm32(group, index)
+    is_vertical = group == 0 or group == cols - 5 or net not in ['VCC1', 'VCC2', 'GND']
+    if net == 'GND':
+        return StdTHTPad.rect90 if not is_vertical else StdTHTPad.rect
+    return StdTHTPad.oval90 if net in ['VCC1', 'VCC2'] and not is_vertical else StdTHTPad.oval
+
 xo = 50
 yo = 50
 xsize = 100
@@ -39,7 +79,7 @@ print "%d rows, %d columns" % (rows, cols)
 #mod = PCBModule('dil28', 'F.Cu', 75, 75)
 #mod.create_pads(DILGrid.small(28), lambda group, index: 'PIN%d' % (group * 14 + index + 1))
 
-matrix = THTMatrixGrid(rows = rows, columns = cols, hpitch = pitch, vpitch = pitch)
+matrix = THTMatrixGrid(rows = rows, columns = cols, hpitch = pitch, vpitch = pitch, padfunc = getpadclass)
 matrix_extremes = matrix.get_extremes().offset(xmid, ymid)
 
 excl = []
@@ -127,43 +167,13 @@ for h in holes:
     pcbf.append(h)
     excl += h.get_exclusions()
     
-def getnet_stm32(group, index):
-    if group == 0:
-        return "GND"
-    if group == cols - 5:
-        return "VCC1"
-    if (group == cols - 4 or group == cols - 3) and index > 3 and index < 28:
-        return "HDR5_%d" % (index + 1)
-    if (group == cols - 2 or group == cols - 1) and index > 3 and index < 28:
-        return "HDR6_%d" % (index + 1)
-    if index < 3:
-        return "HDR1_%d" % (group)
-    if index < 6:
-        return "HDR2_%d" % (group)
-    if index < 10:
-        return "GRP1_%d" % (group)
-    if index == 10:
-        return "GND"
-    if index == 11:
-        return "VCC1"
-    if index < 17:
-        return "GRP2_%d" % (group)
-    if index < 20:
-        return "GRP3_%d" % (group)
-    if index < 23:
-        return "HDR3_%d" % (group)
-    if index < 26:
-        return "HDR4_%d" % (group)
-    if index == 26:
-        return "GND"
-    if index == 27:
-        return "VCC2"
-    return None
 mod = PCBModule('grid', 'F.Cu', xmid, ymid)
 exmatrix = GridWithExclusions(matrix, excl, (xmid, ymid))
 tracks = mod.create_pads(exmatrix, getnet_stm32, tracks_layer = "B.Cu", widthfunc = lambda net: 30 * 0.0254)
 pcbf.append(mod)
 pcbf.append_all(tracks)
+pcbf.append_all(bmp_to_silk((xo + xe) / 2, ymid - 6 * pitch, "rocket1.png", is_lit = lambda r, g, b, a: a > 0 and r > 0, scale = 0.25, center = True))
+pcbf.append_all(bmp_to_silk2((xo + xe) / 2, ymid - 6 * pitch, "rocket1.png", is_lit = lambda r, g, b, a: a > 0 and r > 0, scale = 0.25, center = True))
 make_silkscreen(cols, rows, exmatrix, pcbf, getnet_stm32, 2.54, xmid, ymid)
 
 file("output.kicad_pcb", "w").write(pcbf.generate())

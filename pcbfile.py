@@ -1,3 +1,5 @@
+import Image
+
 def kcquote(s):
     return '"%s"' % s
 
@@ -51,11 +53,13 @@ class PCBPadClass:
             return layer + " " + layer.replace(".Cu", ".Mask") + " " + layer.replace(".Cu", ".SilkS")
 
 class StdTHTPad(PCBPadClass):
-    def __init__(self, shape = "oval", sizex = 1.2, sizey = 1.6, drill = 0.9, boundmargin = 0.254, boundx = 0, boundy = 0, drilly = None, padtype = "thru_hole"):
+    def __init__(self, shape = "oval", sizex = 1.3, sizey = 1.8, drill = 0.9, boundmargin = 0.254, boundx = 0, boundy = 0, drilly = None, padtype = "thru_hole"):
         PCBPadClass.__init__(self, shape = shape, sizex = sizex, sizey = sizey, drill = drill, padtype = padtype, boundmargin = boundmargin, boundx = boundx, boundy = boundy, drilly = drilly)
         
 StdTHTPad.oval = StdTHTPad("oval")
 StdTHTPad.rect = StdTHTPad("rect")
+StdTHTPad.oval90 = StdTHTPad("oval", sizex = 1.8, sizey = 1.3)
+StdTHTPad.rect90 = StdTHTPad("rect", sizex = 1.8, sizey = 1.3)
 
 class StdSMDPad(PCBPadClass):
     def __init__(self, sizex, sizey, boundmargin = 0.254, boundx = 0, boundy = 0, padtype = "smd", shape = "rect"):
@@ -161,13 +165,11 @@ class SMDGenerator:
 
 class PCBNetlist:
     def __init__(self):
-        self.nets = []
+        self.nets = ['']
     def get_net_id(self, name):
-        if name == '':
-            return 0
-        return self.nets.index(name) + 1
+        return self.nets.index(name)
     def generate(self):
-        return "".join(["  (net %d %s)\n" % (i + 1, kcquote(self.nets[i])) for i in xrange(len(self.nets))])
+        return "".join(["  (net %d %s)\n" % (i, kcquote(self.nets[i])) for i in xrange(len(self.nets))])
 
 class GraphicText:
     def __init__(self, text, x, y, layer, angle = 90, thickness = 0.3, sizex = 1.5, sizey = 1.5, reversed = None):
@@ -246,6 +248,47 @@ class TraceSegment:
     def generate(self, netlist):
         return '(segment (start %0.3f %0.3f) (end %0.3f %0.3f) (width %f) (layer %s) (net %d))' % (self.sx, self.sy, self.ex, self.ey, self.width, self.layer, netlist.get_net_id(self.net))
     
+def bmp_to_silk(sx, sy, name, is_lit, scale, layer = "F.SilkS", center = False):
+    im = Image.open(name)
+    cx, cy = im.size
+    if center:
+        sx -= cx * scale / 2
+        sy -= cy * scale / 2
+    segments = []
+    for y in range(cy):
+        last_pixel = None
+        for x in range(cx):
+            if is_lit(*im.getpixel((x, y))):
+                if last_pixel is None:
+                    last_pixel = x
+            else:
+                if last_pixel is not None:
+                    segments.append(GraphicLine(sx + last_pixel * scale, sy + y * scale, sx + (x - 1) * scale, sy + y * scale, layer = layer, width = scale))
+                    last_pixel = None
+        if last_pixel is not None:
+            segments.append(GraphicLine(sx + last_pixel * scale, sy + y * scale, sx + (cx - 1) * scale, sy + y * scale, layer = layer, width = scale))
+    return segments
+
+def bmp_to_silk2(sx, sy, name, is_lit, scale, layer = "F.SilkS", center = False):
+    im = Image.open(name)
+    cx, cy = im.size
+    if center:
+        sx -= cx * scale / 2
+        sy -= cy * scale / 2
+    segments = []
+    for x in range(cx):
+        last_pixel = None
+        for y in range(cy):
+            if is_lit(*im.getpixel((x, y))):
+                if last_pixel is None:
+                    last_pixel = y
+            else:
+                if last_pixel is not None:
+                    segments.append(GraphicLine(sx + x * scale, sy + last_pixel * scale, sx + x * scale, sy + (y - 1) * scale, layer = layer, width = scale))
+                    last_pixel = None
+        if last_pixel is not None:
+            segments.append(GraphicLine(sx + x * scale, sy + last_pixel * scale, sx + x * scale, sy + (cy - 1) * scale, layer = layer, width = scale))
+    return segments
 
 class PCBFile:
     def __init__(self, thickness = 1.6, tracewidth = 6, clearance = 6, gerberdir = "gerbers"):
@@ -284,6 +327,7 @@ class PCBFile:
 
   (general
     (thickness {thickness})
+    (nets {nets})
   )
 
   (page {pagetype})
@@ -320,7 +364,7 @@ class PCBFile:
     (grid_origin 50 50)
     (visible_elements 7FFFFFFF)
     (pcbplotparams
-      (layerselection 284196865)
+      (layerselection 0x000f0_80000001)
       (usegerberextensions true)
       (excludeedgelayer true)
       (linewidth 0.150000)
@@ -351,5 +395,5 @@ class PCBFile:
 {items}
 )
 """.format(pagetype = self.pagetype, thickness = self.thickness, layers = self.get_layerstr(), netlist = self.netlist.generate(), items = "".join([item.generate(self.netlist) for item in self.items]),
-        tracewidth = 0.0254 * self.tracewidth, clearance = 0.0254 * self.clearance, gerberdir = self.gerberdir)
+        tracewidth = 0.0254 * self.tracewidth, clearance = 0.0254 * self.clearance, gerberdir = self.gerberdir, nets = len(self.netlist.nets))
         return skeleton
