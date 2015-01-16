@@ -19,10 +19,10 @@ class PadGrid:
     def get_extremes(self):
         # doesn't include pad size, only centres
         allpads = self.get_all_pads()
-        xs = min([x for x, y, padclass in allpads])
-        ys = min([y for x, y, padclass in allpads])
-        xe = max([x for x, y, padclass in allpads])
-        ye = max([y for x, y, padclass in allpads])
+        xs = min([x for x, y, angle, padclass in allpads])
+        ys = min([y for x, y, angle, padclass in allpads])
+        xe = max([x for x, y, angle, padclass in allpads])
+        ye = max([y for x, y, angle, padclass in allpads])
         return Rect(xs, ys, xe, ye)
 
 class SILGrid(PadGrid):
