@@ -122,7 +122,7 @@ for bo in range(3):
     excl.append(mod2.get_bounding_rect())
     
     if bo == 1:
-        pcbf.append(GraphicText("http://thisisnotrocketscience.nl/", xfp, yfp, "F.SilkS", 0, sizex = 1.1, sizey = 1.2, thickness = 0.15))
+        pcbf.append(GraphicText("http://thisisnotrocketscience.nl/", xfp, yfp, "F.SilkS", 0, sizex = 1.1, sizey = 1.2, width = 0.15))
 
     dilmod = PCBModule('dil%d' % pins, 'F.Cu', xfp, yfp)
     dilmod.create_pads(DILGrid(pins, vspacing), pinnum)
