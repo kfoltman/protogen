@@ -109,15 +109,15 @@ for i in xrange(cols):
 for i in xrange(rows):
     xyt = matrix.get_pad_location_and_type(0, i)
     if xyt is not None:
-        t = GraphicText("%d" % (1 + i), xyt[0] + xmid - 2.54 + 0.3, xyt[1] + ymid, "F.SilkS", 0, sizex = 1, sizey = 0.9, thickness = 0.15)
+        t = GraphicText("%d" % (1 + i), xyt[0] + xmid - 2.54 + 0.3, xyt[1] + ymid, "F.SilkS", 0, sizex = 1, sizey = 0.9, width = 0.15)
         pcbf.append(t)
-        t = GraphicText("%d" % (1 + i), xyt[0] + xmid - 2.54 + 0.3, xyt[1] + ymid, "B.SilkS", 0, sizex = 1, sizey = 0.9, thickness = 0.15)
+        t = GraphicText("%d" % (1 + i), xyt[0] + xmid - 2.54 + 0.3, xyt[1] + ymid, "B.SilkS", 0, sizex = 1, sizey = 0.9, width = 0.15)
         pcbf.append(t)
     xyt = matrix.get_pad_location_and_type(cols - 1, i)
     if xyt is not None:
-        t = GraphicText("%d" % (1 + i), xyt[0] + xmid + 2.54 - 0.3, xyt[1] + ymid, "F.SilkS", 0, sizex = 1, sizey = 0.9, thickness = 0.15)
+        t = GraphicText("%d" % (1 + i), xyt[0] + xmid + 2.54 - 0.3, xyt[1] + ymid, "F.SilkS", 0, sizex = 1, sizey = 0.9, width = 0.15)
         pcbf.append(t)
-        t = GraphicText("%d" % (1 + i), xyt[0] + xmid + 2.54 - 0.3, xyt[1] + ymid, "B.SilkS", 0, sizex = 1, sizey = 0.9, thickness = 0.15)
+        t = GraphicText("%d" % (1 + i), xyt[0] + xmid + 2.54 - 0.3, xyt[1] + ymid, "B.SilkS", 0, sizex = 1, sizey = 0.9, width = 0.15)
         pcbf.append(t)
 
 make_silkscreen(cols, rows, exmatrix, pcbf, getnet_stm32, 2.54, xmid, ymid)
