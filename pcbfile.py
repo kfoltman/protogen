@@ -53,13 +53,13 @@ class PCBPadClass:
             return layer + " " + layer.replace(".Cu", ".Mask") + " " + layer.replace(".Cu", ".SilkS")
 
 class StdTHTPad(PCBPadClass):
-    def __init__(self, shape = "oval", sizex = 1.3, sizey = 1.8, drill = 0.9, boundmargin = 0.254, boundx = 0, boundy = 0, drilly = None, padtype = "thru_hole"):
+    def __init__(self, shape = "oval", sizex = 1.4, sizey = 2.0, drill = 0.9, boundmargin = 0.254, boundx = 0, boundy = 0, drilly = None, padtype = "thru_hole"):
         PCBPadClass.__init__(self, shape = shape, sizex = sizex, sizey = sizey, drill = drill, padtype = padtype, boundmargin = boundmargin, boundx = boundx, boundy = boundy, drilly = drilly)
         
 StdTHTPad.oval = StdTHTPad("oval")
 StdTHTPad.rect = StdTHTPad("rect")
-StdTHTPad.oval90 = StdTHTPad("oval", sizex = 1.8, sizey = 1.3)
-StdTHTPad.rect90 = StdTHTPad("rect", sizex = 1.8, sizey = 1.3)
+StdTHTPad.oval90 = StdTHTPad("oval", sizex = 2.0, sizey = 1.4)
+StdTHTPad.rect90 = StdTHTPad("rect", sizex = 2.0, sizey = 1.4)
 
 class StdSMDPad(PCBPadClass):
     def __init__(self, sizex, sizey, boundmargin = 0.254, boundx = 0, boundy = 0, padtype = "smd", shape = "rect"):
@@ -73,19 +73,20 @@ class MountingHolePad(StdTHTPad):
         StdTHTPad.__init__(self, "oval", diameter, diameter, diameter, padtype = "thru_hole")
 
 class PCBPad:
-    def __init__(self, index, padclass, x, y, netname, layer):
+    def __init__(self, index, padclass, x, y, netname, layer, angle = 0):
         self.index = index
         self.padclass = padclass
         self.layers = padclass.get_pad_layers(layer)
         self.x = x
         self.y = y
         self.netname = netname
+        self.angle = angle
     def generate(self, netlist):
-        return """    (pad %d %s %s (at %s %s) (size %0.4f %0.4f) (drill oval %0.3f %0.3f)
+        return """    (pad "%s" %s %s (at %s %s %s) (size %0.4f %0.4f) (drill oval %0.3f %0.3f)
       (layers %s)
       (net %d %s)
     )
-""" % (self.index, self.padclass.padtype, self.padclass.shape, self.x, self.y, self.padclass.sizex, self.padclass.sizey, self.padclass.drillx, self.padclass.drilly, self.layers, netlist.get_net_id(self.netname), kcquote(self.netname))
+""" % (self.index, self.padclass.padtype, self.padclass.shape, self.x, self.y, self.angle, self.padclass.sizex, self.padclass.sizey, self.padclass.drillx, self.padclass.drilly, self.layers, netlist.get_net_id(self.netname), kcquote(self.netname))
     def get_bounding_rect(self):
         return self.padclass.get_bounding_rect(self.x, self.y)
 
@@ -98,6 +99,12 @@ class PCBModule:
         self.x = x
         self.y = y
         self.pads = []
+        self.items = []
+        
+    def append(self, item):
+        self.items.append(item)
+    def append_all(self, items):
+        self.items += items
 
     def create_pads(self, pad_grid, netfunc = None, tracks_layer = None, widthfunc = None):
         padid = 1
@@ -110,12 +117,12 @@ class PCBModule:
             for i in xrange(pad_grid.get_num_items(g)):
                 res = pad_grid.get_pad_location_and_type(g, i)
                 if res is not None:
-                    x, y, padclass = res
+                    x, y, angle, padclass = res
                     net = ''
                     if netfunc is not None:
                         net = netfunc(g, i)
                     if net is not None:
-                        self.pads.append(PCBPad(padid, padclass, x, y, net, self.layer))
+                        self.pads.append(PCBPad(padid, padclass, x, y, net, self.layer, angle = angle))
                         padid += 1
                         if tracks_layer is not None and last_in_col is not None and last_in_col[0] == net:
                             tracks.append(TraceSegment(x + self.x, last_in_col[1] + self.y, x + self.x, y + self.y, net, widthfunc(net), tracks_layer))
@@ -148,20 +155,23 @@ class PCBModule:
     (tags %s)
 %s
   )
-""" % (self.name, self.layer, self.x, self.y, kcquote(self.description), kcquote(self.tags), "".join([pad.generate(netlist) for pad in self.pads]))
+""" % (self.name, self.layer, self.x, self.y, kcquote(self.description), kcquote(self.tags), "".join([pad.generate(netlist) for pad in self.pads] + [item.generate(netlist) for item in self.items]))
         
 class MountingHoleModule(PCBModule):
-    def __init__(self, x, y, diameter, layer = "F.Cu"):
+    def __init__(self, x, y, diameter, layer = "F.Cu", crosshair = False):
         PCBModule.__init__(self, "hole", layer, x, y)
         self.pads.append(PCBPad(1, MountingHolePad(diameter), 0, 0, '', layer))
 
-class SMDGenerator:
+class FootprintGenerator:
     def create(self, layer, x, y, netfunc = None):
         m = PCBModule(self.name, layer, x, y)
         m.create_pads(self.get_pad_grid(), netfunc)
+        self.create_silk(m)
         return m
     def get_pad_grid(self):
         return self.grid
+    def create_silk(self, m):
+        pass
 
 class PCBNetlist:
     def __init__(self):
@@ -171,70 +181,87 @@ class PCBNetlist:
     def generate(self):
         return "".join(["  (net %d %s)\n" % (i, kcquote(self.nets[i])) for i in xrange(len(self.nets))])
 
-class GraphicText:
-    def __init__(self, text, x, y, layer, angle = 90, thickness = 0.3, sizex = 1.5, sizey = 1.5, reversed = None):
+class GraphicObject:
+    def __init__(self, layer, width, angle = None, is_footprint = False):
+        self.layer = layer or ("F.SilkS" if is_footprint else "Edge.Cuts")
+        self.width = width
+        self.angle = angle
+        self.angle_text = "(angle %d)" % angle if angle is not None else ""
+        self.is_footprint = is_footprint
+
+class GraphicText(GraphicObject):
+    def __init__(self, text, x, y, layer, angle = 0, width = 0.3, sizex = 1.5, sizey = 1.5, reversed = None, is_footprint = False, footprint_text_type = None):
         self.text = text
         self.x = x
         self.y = y
-        self.angle = angle
-        self.layer = layer
-        self.thickness = thickness
+        GraphicObject.__init__(self, layer, width, angle, is_footprint)
         self.sizex = sizex
         self.sizey = sizey
+        self.footprint_text_type = footprint_text_type
         if reversed is None:
             self.reversed = layer.startswith("B.")
         else:
             self.reversed = reversed
     def generate(self, netlist):
-        return '  (gr_text %s (at %0.3f %0.3f %0.1f) (layer %s) (effects (font (size %f %f) (thickness %f))%s))\n' % (kcquote(self.text), self.x, self.y, self.angle, self.layer, self.sizex, self.sizey, self.thickness, " (justify mirror)" if self.reversed else "")
+        if self.is_footprint:
+            return '  (fp_text %s %s (at %0.3f %0.3f %0.1f) (layer %s) (effects (font (size %f %f) (thickness %f))%s))\n' % (self.footprint_text_type, kcquote(self.text), self.x, self.y, self.angle, self.layer, self.sizex, self.sizey, self.width, " (justify mirror)" if self.reversed else "")
+        else:
+            return '  (gr_text %s (at %0.3f %0.3f %0.1f) (layer %s) (effects (font (size %f %f) (thickness %f))%s))\n' % (kcquote(self.text), self.x, self.y, self.angle, self.layer, self.sizex, self.sizey, self.width, " (justify mirror)" if self.reversed else "")
 
-class GraphicLine:
-    def __init__(self, startx, starty, endx, endy, angle = 0, layer = 'Edge.Cuts', width = 0.1):
+class GraphicLine(GraphicObject):
+    def __init__(self, startx, starty, endx, endy, layer = None, width = 0.1, is_footprint = False):
+        self.startx = startx
+        self.starty = starty
+        self.endx = endx
+        self.endy = endy
+        GraphicObject.__init__(self, layer, width, None, is_footprint)
+    def generate(self, netlist):
+        return '  (%s_line (start %0.3f %0.3f) (end %0.3f %0.3f) (layer %s) (width %f))\n' % ("fp" if self.is_footprint else "gr", self.startx, self.starty, self.endx, self.endy, self.layer, self.width)
+
+class GraphicArc(GraphicObject):
+    def __init__(self, startx, starty, endx, endy, angle = 90, layer = None, width = 0.1, is_footprint = False):
         self.startx = startx
         self.starty = starty
         self.endx = endx
         self.endy = endy
         self.angle = angle
-        self.layer = layer
-        self.width = width
+        GraphicObject.__init__(self, layer, width, angle, is_footprint)
     def generate(self, netlist):
-        return '  (gr_line (start %0.3f %0.3f) (end %0.3f %0.3f) (angle %d) (layer %s) (width %f))\n' % (self.startx, self.starty, self.endx, self.endy, self.angle, self.layer, self.width)
+        return '  (%s_arc (start %0.3f %0.3f) (end %0.3f %0.3f) %s (layer %s) (width %f))\n' % ("fp" if self.is_footprint else "gr", self.startx, self.starty, self.endx, self.endy, self.angle_text, self.layer, self.width)
 
-class GraphicArc:
-    def __init__(self, startx, starty, endx, endy, angle = 90, layer = 'Edge.Cuts', width = 0.1):
-        self.startx = startx
-        self.starty = starty
-        self.endx = endx
-        self.endy = endy
+class GraphicCircle(GraphicObject):
+    def __init__(self, centerx, centery, radius, angle = 90, layer = None, width = 0.1, is_footprint = False):
+        self.centerx = centerx
+        self.centery = centery
+        self.endx = centerx + radius
+        self.endy = centery
         self.angle = angle
-        self.layer = layer
-        self.width = width
+        GraphicObject.__init__(self, layer, width, angle, is_footprint)
     def generate(self, netlist):
-        return '  (gr_arc (start %0.3f %0.3f) (end %0.3f %0.3f) (angle %d) (layer %s) (width %f))\n' % (self.startx, self.starty, self.endx, self.endy, self.angle, self.layer, self.width)
+        return '  (%s_circle (center %0.3f %0.3f) (end %0.3f %0.3f) (layer %s) (width %f))\n' % ("fp" if self.is_footprint else "gr", self.centerx, self.centery, self.endx, self.endy, self.layer, self.width)
 
-class GraphicRect:
-    def __init__(self, startx, starty, endx, endy, roundness = 0, layer = 'Edge.Cuts', width = 0.1):
+class GraphicRect(GraphicObject):
+    def __init__(self, startx, starty, endx, endy, roundness = 0, layer = None, width = 0.1, is_footprint = False):
         self.startx = startx
         self.starty = starty
         self.endx = endx
         self.endy = endy
-        self.layer = layer
-        self.width = width
         self.roundness = roundness
+        GraphicObject.__init__(self, layer, width, None, is_footprint)
     def generate(self, netlist):
         startx, starty, endx, endy = self.startx, self.starty, self.endx, self.endy
         layer, width = self.layer, self.width
         arcs = ''
         r = self.roundness
         if self.roundness > 0:
-            arcs = GraphicArc(startx + r, starty + r, startx, starty + r, 90, layer, width).generate(netlist) + \
-                GraphicArc(endx - r, starty + r, endx, starty + r, -90, layer, width).generate(netlist) + \
-                GraphicArc(startx + r, endy - r, startx, endy - r, -90, layer, width).generate(netlist) + \
-                GraphicArc(endx - r, endy - r, endx, endy - r, 90, layer, width).generate(netlist)
-        return arcs + GraphicLine(startx + r, starty, endx - r, starty, 0, layer, width).generate(netlist) + \
-            GraphicLine(endx, starty + r, endx, endy - r, 90, layer, width).generate(netlist) + \
-            GraphicLine(endx - r, endy, startx + r, endy, 0, layer, width).generate(netlist) + \
-            GraphicLine(startx, endy - r, startx, starty + r, 90, layer, width).generate(netlist)
+            arcs = GraphicArc(startx + r, starty + r, startx, starty + r, 90, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+                GraphicArc(endx - r, starty + r, endx, starty + r, -90, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+                GraphicArc(startx + r, endy - r, startx, endy - r, -90, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+                GraphicArc(endx - r, endy - r, endx, endy - r, 90, layer, width, is_footprint = self.is_footprint).generate(netlist)
+        return arcs + GraphicLine(startx + r, starty, endx - r, starty, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+            GraphicLine(endx, starty + r, endx, endy - r, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+            GraphicLine(endx - r, endy, startx + r, endy, layer, width, is_footprint = self.is_footprint).generate(netlist) + \
+            GraphicLine(startx, endy - r, startx, starty + r, layer, width, is_footprint = self.is_footprint).generate(netlist)
 
 class TraceSegment:
     def __init__(self, sx, sy, ex, ey, net, width = 0.254, layer = 'B.Cu'):
