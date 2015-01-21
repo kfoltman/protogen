@@ -281,8 +281,8 @@ class THTFootprintGenerators:
     C = {}
     for pins in range(6, 29, 2):
         DIL[pins] = DILTHT("DIL", "DIL_%d" % pins, StdTHTPad(), pitch = 2.54, distance = 3, pins = pins)
-    for pins in range(24, 41, 2):
-        DILW[pins] = DILTHT("DILW", "DILW_%d" % pins, StdTHTPad(), pitch = 2.54, distance = 5, pins = pins)
+    for pins in range(20, 41, 2):
+        DILW[pins] = DILTHT("DILW", "DILW_%d" % pins, StdTHTPad(), pitch = 2.54, distance = 6, pins = pins)
     C[1] = SILTHT("THT-C", "C1", pitch = 2.54 * 1, pins = 2, padclass = StdTHTPad.oval, invert = False, use_distance_for_name = True)
     C[2] = SILTHT("THT-C", "C2", pitch = 2.54 * 2, pins = 2, padclass = StdTHTPad.oval, invert = False, use_distance_for_name = True)
     R[3] = SILTHT("THT-R", "R3", pitch = 2.54 * 3, pins = 2, padclass = StdTHTPad.oval, invert = False, use_distance_for_name = True)
